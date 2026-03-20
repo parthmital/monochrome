@@ -21,10 +21,12 @@ import { isCustomFormat } from './ffmpegFormats.ts';
 import { DownloadProgress } from './progressEvents.js';
 import { resolveDownloadTotalBytes } from './downloadProgressUtils.js';
 import { readableStreamIterator } from './readableStreamIterator.js';
+import { HiFiClient, TidalResponse } from './HiFi.ts';
 
 export const DASH_MANIFEST_UNAVAILABLE_CODE = 'DASH_MANIFEST_UNAVAILABLE';
 export { resolveDownloadTotalBytes };
 const TIDAL_V2_TOKEN = 'txNoH4kkV41MfH25';
+const client = new HiFiClient();
 
 export class LosslessAPI {
     constructor(settings) {
@@ -54,6 +56,20 @@ export class LosslessAPI {
 
     async fetchWithRetry(relativePath, options = {}) {
         const type = options.type || 'api';
+        const instanceRoutes = ['/track', '/album/similar', '/artist/similar', '/video'];
+
+        if (window.allTidal == true || !instanceRoutes.some((route) => relativePath.startsWith(route))) {
+            try {
+                console.log(relativePath);
+                return await client.queryResponse(relativePath);
+            } catch (err) {
+                console.warn(
+                    `Direct fetch failed for ${relativePath}. Falling back to configured API instances...`,
+                    err
+                );
+            }
+        }
+
         let instances = await this.settings.getInstances(type);
         if (instances.length === 0) {
             throw new Error(`No API instances configured for type: ${type}`);
@@ -419,7 +435,9 @@ export class LosslessAPI {
                 items: preparedTracks,
             };
 
-            await this.cache.set('search_tracks', query, result);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('search_tracks', query, result);
+            }
             return result;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -441,7 +459,9 @@ export class LosslessAPI {
                 items: normalized.items.map((a) => this.prepareArtist(a)),
             };
 
-            await this.cache.set('search_artists', query, result);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('search_artists', query, result);
+            }
             return result;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -464,7 +484,9 @@ export class LosslessAPI {
                 items: this.deduplicateAlbums(preparedItems),
             };
 
-            await this.cache.set('search_albums', query, result);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('search_albums', query, result);
+            }
             return result;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -486,7 +508,9 @@ export class LosslessAPI {
                 items: normalized.items.map((p) => this.preparePlaylist(p)),
             };
 
-            await this.cache.set('search_playlists', query, result);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('search_playlists', query, result);
+            }
             return result;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -502,7 +526,6 @@ export class LosslessAPI {
         try {
             const response = await this.fetchWithRetry(`/search/?v=${encodeURIComponent(query)}`, {
                 ...options,
-                allowedDomains: ['api.monochrome.tf', 'arran.monochrome.tf'],
             });
             const data = await response.json();
             const normalized = this.normalizeSearchResponse(data, 'videos');
@@ -511,7 +534,9 @@ export class LosslessAPI {
                 items: normalized.items.map((v) => this.prepareVideo(v)),
             };
 
-            await this.cache.set('search_videos', query, result);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('search_videos', query, result);
+            }
             return result;
         } catch (error) {
             if (error.name === 'AbortError') throw error;
@@ -538,7 +563,9 @@ export class LosslessAPI {
             originalTrackUrl: data.OriginalTrackUrl || null,
         };
 
-        await this.cache.set('video', id, result);
+        if (!(response instanceof TidalResponse)) {
+            await this.cache.set('video', id, result);
+        }
         return result;
     }
 
@@ -667,7 +694,9 @@ export class LosslessAPI {
 
         const result = { album, tracks };
 
-        await this.cache.set('album', id, result);
+        if (!(response instanceof TidalResponse)) {
+            await this.cache.set('album', id, result);
+        }
         return result;
     }
 
@@ -777,7 +806,9 @@ export class LosslessAPI {
 
         const result = { playlist, tracks };
 
-        await this.cache.set('playlist', id, result);
+        if (!(response instanceof TidalResponse)) {
+            await this.cache.set('playlist', id, result);
+        }
         return result;
     }
 
@@ -811,7 +842,9 @@ export class LosslessAPI {
         };
 
         const result = { mix, tracks };
-        await this.cache.set('mix', id, result);
+        if (!(response instanceof TidalResponse)) {
+            await this.cache.set('mix', id, result);
+        }
         return result;
     }
 
@@ -968,7 +1001,9 @@ export class LosslessAPI {
 
         const result = { ...artist, albums, eps, tracks, videos };
 
-        await this.cache.set('artist', cacheKey, result);
+        if (!(primaryResponse instanceof TidalResponse) && !(contentResponse instanceof TidalResponse)) {
+            await this.cache.set('artist', cacheKey, result);
+        }
         return result;
     }
 
@@ -988,7 +1023,9 @@ export class LosslessAPI {
 
             const result = items.map((artist) => this.prepareArtist(artist));
 
-            await this.cache.set('similar_artists', artistId, result);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('similar_artists', artistId, result);
+            }
             return result;
         } catch (e) {
             console.warn('Failed to fetch similar artists:', e);
@@ -1016,7 +1053,9 @@ export class LosslessAPI {
                         text: data.text,
                         source: data.source || 'Tidal',
                     };
-                    await this.cache.set('artist', cacheKey, bio);
+                    if (!(response instanceof TidalResponse)) {
+                        await this.cache.set('artist', cacheKey, bio);
+                    }
                     return bio;
                 }
             }
@@ -1041,7 +1080,9 @@ export class LosslessAPI {
 
             const result = items.map((album) => this.prepareAlbum(album));
 
-            await this.cache.set('similar_albums', albumId, result);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('similar_albums', albumId, result);
+            }
             return result;
         } catch (e) {
             console.warn('Failed to fetch similar albums:', e);
@@ -1181,7 +1222,9 @@ export class LosslessAPI {
 
         if (found) {
             track = this.prepareTrack(found.item || found);
-            await this.cache.set('track', cacheKey, track);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('track', cacheKey, track);
+            }
             return track;
         }
 
@@ -1203,7 +1246,9 @@ export class LosslessAPI {
             const items = data.items || [];
             const tracks = items.map((item) => this.prepareTrack(item.track || item));
 
-            await this.cache.set('recommendations', id, tracks);
+            if (!(response instanceof TidalResponse)) {
+                await this.cache.set('recommendations', id, tracks);
+            }
             return tracks;
         } catch (error) {
             console.error('Failed to fetch recommendations:', error);
@@ -1220,7 +1265,9 @@ export class LosslessAPI {
         const jsonResponse = await response.json();
         const result = this.parseTrackLookup(this.normalizeTrackResponse(jsonResponse));
 
-        await this.cache.set('track', cacheKey, result);
+        if (!(response instanceof TidalResponse)) {
+            await this.cache.set('track', cacheKey, result);
+        }
         return result;
     }
 
@@ -1243,7 +1290,9 @@ export class LosslessAPI {
             }
         }
 
-        this.streamCache.set(cacheKey, streamUrl);
+        if (!(lookup instanceof TidalResponse)) {
+            this.streamCache.set(cacheKey, streamUrl);
+        }
         return streamUrl;
     }
 
@@ -1288,7 +1337,9 @@ export class LosslessAPI {
             throw new Error(`Could not resolve video stream URL for ID: ${id}`);
         }
 
-        this.streamCache.set(cacheKey, streamUrl);
+        if (!(lookup instanceof TidalResponse)) {
+            this.streamCache.set(cacheKey, streamUrl);
+        }
         return streamUrl;
     }
 
